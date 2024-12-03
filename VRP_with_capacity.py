@@ -9,16 +9,34 @@ class CVRP_Greedy:
         self.max_capacity = capacity
         self.routes = [[0,0] for _ in range(num_vehicles)]
         self.capacities = [0 for _ in range(num_vehicles)]
-    def consider_insert_option(self,insert_position, vehicles_id):
-        pass
+        self.total_cost = 0
+    def consider_insert_option(self,insert_position, vehicles_id,customer_id):
+        cost = + self.cost_matrix[self.routes[vehicles_id][insert_position-1]][customer_id] + self.cost_matrix[customer_id][self.routes[vehicles_id][insert_position+1]]
+        capacity_of_vehicle_if_insert = self.capacities[vehicles_id] + self.demands[customer_id]
+        if capacity_of_vehicle_if_insert <= self.max_capacity:
+            return cost
+        return float("inf")
+    def update(self,vehicle_id,customer_id,insert_position,cost):
+        self.routes[vehicle_id].insert(insert_position,customer_id)
+        self.capacities[vehicle_id] += self.demands[customer_id]
+        self.total_cost += cost
     def solve(self):
         unchoosed_customer = [False]*self.num_customers
         for customer_id in range(self.num_customers):
             if not unchoosed_customer[customer_id]: #the customer is not visited by any vehicles 
                 min_cost = float("inf")
+                vehicles_selected,position_inserted = None,None
                 for vehicles_id in range(self.num_vehicles):
-                    for insert_position in range(1,len(self.routes[vehicles_id]))
-        pass
+                    for insert_position in range(1,len(self.routes[vehicles_id])):
+                        cost = self.consider_insert_option(insert_position, vehicles_id, customer_id)
+                        if cost < min_cost:
+                            min_cost = cost
+                            vehicles_selected = vehicles_id
+                            position_inserted = insert_position
+                if not vehicles_selected: #pick a vehicle successfully
+                    self.update(vehicles_id,customer_id,position_inserted)
+                    unchoosed_customer[customer_id] = True
+        return self.routes,self.total_cost
 
 
 def read_input(file_content):
@@ -63,7 +81,8 @@ if __name__ == "__main__":
     #input
     with open("E-n22-k4.vrp", "r") as file:
         nodes,demands, capacity = read_input(file.read())
+        n = len(nodes)
+        k = 4
         cost_matrix = compute_cost_matrix(nodes)
-        print(cost_matrix)
-        print(demands)
-        print(capacity)
+        solver = CVRP_Greedy(n,k,demands,cost_matrix,capacity)
+        print(solver.solve())
