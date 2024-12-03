@@ -10,6 +10,7 @@ class CVRP_Greedy:
         self.routes = [[0,0] for _ in range(num_vehicles)]
         self.capacities = [0 for _ in range(num_vehicles)]
         self.total_cost = 0
+        self.unchoosed_customer = [False]*self.num_customers
     def consider_insert_option(self,insert_position, vehicles_id,customer_id):
         vehicle_route = self.routes[vehicles_id].copy()
         vehicle_route.insert(insert_position,customer_id)
@@ -23,23 +24,28 @@ class CVRP_Greedy:
         self.routes[vehicle_id].insert(insert_position,customer_id)
         self.capacities[vehicle_id] += self.demands[customer_id]
         self.total_cost += cost
+    def check_if_any_customer_remain(self):
+        for i in range(len(self.unchoosed_customer)):
+            if self.unchoosed_customer[i] == False:
+                return True
+        return False
     def solve(self):
-        unchoosed_customer = [False]*self.num_customers
-        for customer_id in range(self.num_customers):
-            if not unchoosed_customer[customer_id]: #the customer is not visited by any vehicles 
-                min_cost = float("inf")
-                vehicles_selected,position_inserted = None,None
-                for vehicles_id in range(self.num_vehicles):
-                    for insert_position in range(1,len(self.routes[vehicles_id])):
-                        cost = self.consider_insert_option(insert_position, vehicles_id, customer_id)
-                        if cost < min_cost:
-                            min_cost = cost
-                            vehicles_selected = vehicles_id
-                            position_inserted = insert_position
-                if not vehicles_selected: #pick a vehicle successfully
-                    self.update(vehicles_id,customer_id,position_inserted,min_cost)
-                    unchoosed_customer[customer_id] = True
-        return self.routes,self.total_cost
+        while self.check_if_any_customer_remain():
+            for customer_id in range(self.num_customers):
+                if not self.unchoosed_customer[customer_id]: #the customer is not visited by any vehicles 
+                    min_cost = float("inf")
+                    vehicles_selected,position_inserted = None,None
+                    for vehicles_id in range(self.num_vehicles):
+                        for insert_position in range(1,len(self.routes[vehicles_id])):
+                            cost = self.consider_insert_option(insert_position, vehicles_id, customer_id)
+                            if cost < min_cost:
+                                min_cost = cost
+                                vehicles_selected = vehicles_id
+                                position_inserted = insert_position
+                    if not vehicles_selected: #pick a vehicle successfully
+                        self.update(vehicles_id,customer_id,position_inserted,min_cost)
+                        self.unchoosed_customer[customer_id] = True
+            return self.routes,self.total_cost
 
 
 def read_input(file_content):
