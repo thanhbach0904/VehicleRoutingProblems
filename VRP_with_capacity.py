@@ -11,7 +11,10 @@ class CVRP_Greedy:
         self.capacities = [0 for _ in range(num_vehicles)]
         self.total_cost = 0
     def consider_insert_option(self,insert_position, vehicles_id,customer_id):
-        cost = + self.cost_matrix[self.routes[vehicles_id][insert_position-1]][customer_id] + self.cost_matrix[customer_id][self.routes[vehicles_id][insert_position+1]]
+        vehicle_route = self.routes[vehicles_id].copy()
+        vehicle_route.insert(insert_position,customer_id)
+        cost = self.cost_matrix[vehicle_route[insert_position-1]][customer_id] + self.cost_matrix[vehicle_route[customer_id]][insert_position+1] #error here
+        del vehicle_route
         capacity_of_vehicle_if_insert = self.capacities[vehicles_id] + self.demands[customer_id]
         if capacity_of_vehicle_if_insert <= self.max_capacity:
             return cost
@@ -34,7 +37,7 @@ class CVRP_Greedy:
                             vehicles_selected = vehicles_id
                             position_inserted = insert_position
                 if not vehicles_selected: #pick a vehicle successfully
-                    self.update(vehicles_id,customer_id,position_inserted)
+                    self.update(vehicles_id,customer_id,position_inserted,min_cost)
                     unchoosed_customer[customer_id] = True
         return self.routes,self.total_cost
 
