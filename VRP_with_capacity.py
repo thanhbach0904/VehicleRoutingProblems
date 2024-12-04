@@ -11,15 +11,22 @@ class CVRP_Greedy:
         self.capacities = [0 for _ in range(num_vehicles)]
         self.total_cost = 0
         self.unchoosed_customer = [False]*self.num_customers
-    def consider_insert_option(self,insert_position, vehicles_id,customer_id):
+    def consider_insert_option(self, insert_position, vehicles_id, customer_id):
         vehicle_route = self.routes[vehicles_id].copy()
-        vehicle_route.insert(insert_position,customer_id)
-        cost = self.cost_matrix[vehicle_route[insert_position-1]][customer_id] + self.cost_matrix[vehicle_route[customer_id]][insert_position+1] #error here
-        del vehicle_route
+        vehicle_route.insert(insert_position, customer_id)
+        
+        
+        prev_node = vehicle_route[insert_position-1]
+        next_node = vehicle_route[insert_position+1]
+        cost = (self.cost_matrix[prev_node][customer_id] + 
+                self.cost_matrix[customer_id][next_node] - 
+                self.cost_matrix[prev_node][next_node])
+        
         capacity_of_vehicle_if_insert = self.capacities[vehicles_id] + self.demands[customer_id]
         if capacity_of_vehicle_if_insert <= self.max_capacity:
             return cost
-        return float("inf")
+        else:
+            return float("inf")
     def update(self,vehicle_id,customer_id,insert_position,cost):
         self.routes[vehicle_id].insert(insert_position,customer_id)
         self.capacities[vehicle_id] += self.demands[customer_id]
@@ -31,21 +38,33 @@ class CVRP_Greedy:
         return False
     def solve(self):
         while self.check_if_any_customer_remain():
-            for customer_id in range(self.num_customers):
-                if not self.unchoosed_customer[customer_id]: #the customer is not visited by any vehicles 
+            customer_served = False
+            for customer_id in range(1, self.num_customers):
+                if not self.unchoosed_customer[customer_id]:  #the customer is not visited by any vehicles 
                     min_cost = float("inf")
-                    vehicles_selected,position_inserted = None,None
+                    vehicles_selected = None
+                    position_inserted = None
+                    
                     for vehicles_id in range(self.num_vehicles):
-                        for insert_position in range(1,len(self.routes[vehicles_id])):
+                        for insert_position in range(1, len(self.routes[vehicles_id])):
                             cost = self.consider_insert_option(insert_position, vehicles_id, customer_id)
                             if cost < min_cost:
                                 min_cost = cost
                                 vehicles_selected = vehicles_id
                                 position_inserted = insert_position
-                    if not vehicles_selected: #pick a vehicle successfully
-                        self.update(vehicles_id,customer_id,position_inserted,min_cost)
+                    
+                    if vehicles_selected is not None:  #found a vehicle that can serve this customer
+                        self.update(vehicles_selected, customer_id, position_inserted, min_cost)
                         self.unchoosed_customer[customer_id] = True
-            return self.routes,self.total_cost
+                        customer_served = True
+                    else:
+                        print(f"Customer {customer_id} can not find any vehicles.")
+            
+            #break if no customer is served
+            if not customer_served:
+                break
+        
+        return self.routes, self.total_cost, self.capacities
 
 
 def read_input(file_content):
@@ -88,7 +107,7 @@ def compute_cost_matrix(nodes):
 
 if __name__ == "__main__":
     #input
-    with open("E-n22-k4.vrp", "r") as file:
+    with open("VehicleRoutingProblems\E-n22-k4.vrp", "r") as file:
         nodes,demands, capacity = read_input(file.read())
         n = len(nodes)
         k = 4
