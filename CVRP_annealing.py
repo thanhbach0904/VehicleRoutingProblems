@@ -66,7 +66,7 @@ class AdvancedCVRPSolver:
         
         for i in range(iterations):
             #generate neighbor solution by randomly swap 2 customers between 2 vehicles
-            neighbor_solution = self.generate_neighbor()
+            neighbor_solution = self.generate_neighbor(option= "swap_2_cities")
             
             #criteria for changing solution
             delta_cost = neighbor_solution['total_cost'] - current_solution['total_cost']
@@ -112,38 +112,79 @@ class AdvancedCVRPSolver:
         
         return best_insertion
     
-    def generate_neighbor(self):
+    def generate_neighbor(self,option = "swap_2_cities"):
+        if option == "swap_2_cities": #hoan vi 2 thanh pho ngau nhien tu 2 xe ngau nhien
         
-        
-        neighbor_routes = [route.copy() for route in self.routes]
-        neighbor_loads = self.vehicle_loads.copy()
-        
-        
-        v1, v2 = random.sample(range(self.num_vehicles), 2)
-        
-        
-        if len(neighbor_routes[v1]) > 2 and len(neighbor_routes[v2]) > 2:
-            c1_idx = random.randint(1, len(neighbor_routes[v1])-2)
-            c2_idx = random.randint(1, len(neighbor_routes[v2])-2)
-            
-            c1, c2 = neighbor_routes[v1][c1_idx], neighbor_routes[v2][c2_idx]
+            neighbor_routes = [route.copy() for route in self.routes]
+            neighbor_loads = self.vehicle_loads.copy()
             
             
-            if (neighbor_loads[v1] - self.demands[c1] + self.demands[c2] <= self.max_capacity and neighbor_loads[v2] - self.demands[c2] + self.demands[c1] <= self.max_capacity):
+            v1, v2 = random.sample(range(self.num_vehicles), 2)
+            
+            
+            if len(neighbor_routes[v1]) > 2 and len(neighbor_routes[v2]) > 2:
+                c1_idx = random.randint(1, len(neighbor_routes[v1])-2)
+                c2_idx = random.randint(1, len(neighbor_routes[v2])-2)
                 
-                neighbor_routes[v1][c1_idx], neighbor_routes[v2][c2_idx] = c2, c1 #swap if the swap does not cause capacity limit in both vehicles
+                c1, c2 = neighbor_routes[v1][c1_idx], neighbor_routes[v2][c2_idx]
                 
-                neighbor_loads[v1] = sum(self.demands[c] for c in neighbor_routes[v1][1:-1])
-                neighbor_loads[v2] = sum(self.demands[c] for c in neighbor_routes[v2][1:-1])
-        
-        
-        total_cost = sum(
-            sum(self.cost_matrix[neighbor_routes[i][j]][neighbor_routes[i][j+1]] 
-                for j in range(len(neighbor_routes[i])-1))
-            for i in range(self.num_vehicles)
-        )
-        
-        return {'routes': neighbor_routes, 'total_cost': total_cost, 'vehicle_loads': neighbor_loads}
+                
+                if (neighbor_loads[v1] - self.demands[c1] + self.demands[c2] <= self.max_capacity and neighbor_loads[v2] - self.demands[c2] + self.demands[c1] <= self.max_capacity):
+                    
+                    neighbor_routes[v1][c1_idx], neighbor_routes[v2][c2_idx] = c2, c1 #swap if the swap does not cause capacity limit in both vehicles
+                    
+                    neighbor_loads[v1] = sum(self.demands[c] for c in neighbor_routes[v1][1:-1])
+                    neighbor_loads[v2] = sum(self.demands[c] for c in neighbor_routes[v2][1:-1])
+            
+            
+            total_cost = sum(
+                sum(self.cost_matrix[neighbor_routes[i][j]][neighbor_routes[i][j+1]] 
+                    for j in range(len(neighbor_routes[i])-1))
+                for i in range(self.num_vehicles)
+            )
+            
+            return {'routes': neighbor_routes, 'total_cost': total_cost, 'vehicle_loads': neighbor_loads}
+        elif option == "reverse_sub_route_between_2_cities": #chon 2 thanh pho ngau nhien c1,c2 trong cung 1 route roi dao nguoc sub-route tu c1->c2
+            #chon vehicle ngau nhien, chon thanh pho c1,c2 ngau nhien thuoc vehicle nay sao cho c1_idx < c2_idx. Dao nguoc sub-route nhu sau : routes[vehicle_id][c1_idx + 1 : c2_idx] = routes[vehicle_id][c1_idx + 1 : c2_idx][::-1]
+            pass
+        elif option == "insert_sub_route_to_another_pos": #chon 1 hanh trinh con roi chen vao vi tri ngau nhien
+            #chon hanh trinh con tu vehicle co nhieu customer nhat -> vehicle co it customer nhat
+            pass
+        elif option == "insert_random_city_to_new_pos": #chon 1 thanh pho tu vehicle phuc vu nhieu khach -> vehicle phuc vu it khach
+            neighbor_routes = [route.copy() for route in self.routes]
+            neighbor_loads = self.vehicle_loads.copy()
+            highest_customer_served_vehicle, lowest_customer_served_vehicle = None,None
+            min_cus,max_cus = float("inf"), - float("inf")
+            for idx,route in enumerate(neighbor_routes):
+                if len(route) > max_cus:
+                    max_cus = len(route)
+                    highest_customer_served_vehicle = idx
+                if len(route) < min_cus:
+                    min_cus = len(route)
+                    lowest_customer_served_vehicle = idx
+            #potential approach : choose the vehicle which has the highest cost, remove the city that reduce the cost as much as possible and insert it into the vehicles with lowest cost.
+            #chose a city from highest customer served vehicle
+            c_idx = random.randint(1, len(neighbor_routes[highest_customer_served_vehicle]) - 2)
+            city = neighbor_routes[highest_customer_served_vehicle][c_idx]
+            if neighbor_loads[highest_customer_served_vehicle] >= self.demands[city] and neighbor_loads[lowest_customer_served_vehicle] + self.demands[city] <= self.max_capacity:
+                new_neighbor_route = neighbor_routes[highest_customer_served_vehicle][:c_idx] + neighbor_routes[highest_customer_served_vehicle][c_idx + 1:] #remove the chosen city from highest 
+                neighbor_routes[highest_customer_served_vehicle] = new_neighbor_route
+                neighbor_loads[highest_customer_served_vehicle] -= self.demands[city] #update the loads of the highest city
+                
+                insert_pos = random.randint(1,len(neighbor_routes[lowest_customer_served_vehicle]) - 1)
+                neighbor_routes[lowest_customer_served_vehicle].insert(insert_pos, city) #insert the chosen city to the lower city
+                neighbor_loads[lowest_customer_served_vehicle] += self.demands[city] 
+
+            total_cost = sum(
+                sum(self.cost_matrix[neighbor_routes[i][j]][neighbor_routes[i][j+1]] 
+                    for j in range(len(neighbor_routes[i])-1))
+                for i in range(self.num_vehicles)
+            )
+            
+            return {'routes': neighbor_routes, 'total_cost': total_cost, 'vehicle_loads': neighbor_loads}
+
+        else:
+            raise ValueError("Invalid option for generating neighbor. Can only choose options : [swap_2_cities, reverse_sub_route_between_2_cities, insert_sub_route_to_another_pos, insert_random_city_to_new_pos]")
     
     def _log_solution_summary(self):
         self.logger.info("Solution Summary:")
