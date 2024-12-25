@@ -3,6 +3,9 @@ import random
 import logging
 from typing import List, Tuple, Dict
 import time
+import os
+import glob
+
 class AdvancedCVRPSolver:
     def __init__(self, num_customers: int, num_vehicles: int, demands: List[int], cost_matrix: List[List[float]], capacity: int):
         
@@ -49,16 +52,16 @@ class AdvancedCVRPSolver:
             self.total_cost += insertion_cost
             self.unserved_customers.remove(customer)
             
-            self.logger.info(f"Inserted Customer {customer} into Vehicle {vehicle_idx}")
+            #self.logger.info(f"Inserted Customer {customer} into Vehicle {vehicle_idx}")
         
         self._log_solution_summary()
         
         return {"routes": self.routes,"total_cost": self.total_cost,"vehicle_loads": self.vehicle_loads}
     
-    def simulated_annealing(self, initial_temp: float = 1000, cooling_rate: float = 0.9, iterations: int = 100000) -> Dict:
+    def simulated_annealing(self, initial_temp: float = 1000, cooling_rate: float = 0.9, iterations: int = 100) -> Dict:
         
         
-        # Initial solution using greedy
+        #initial solution using greedy
         current_solution = self.nearest_insertion_greedy()
         best_solution = current_solution.copy()
         
@@ -79,7 +82,7 @@ class AdvancedCVRPSolver:
             
             temperature *= cooling_rate
             
-            if i % 10000 == 0:
+            if i % 10 == 0:
                 self.logger.info(f"Iteration {i}: Current Cost = {current_solution['total_cost']}")
         
         self.logger.info(f"Simulated Annealing completed after {iterations} iterations.")
@@ -146,10 +149,59 @@ class AdvancedCVRPSolver:
             return {'routes': neighbor_routes, 'total_cost': total_cost, 'vehicle_loads': neighbor_loads}
         elif option == "reverse_sub_route_between_2_cities": #chon 2 thanh pho ngau nhien c1,c2 trong cung 1 route roi dao nguoc sub-route tu c1->c2
             #chon vehicle ngau nhien, chon thanh pho c1,c2 ngau nhien thuoc vehicle nay sao cho c1_idx < c2_idx. Dao nguoc sub-route nhu sau : routes[vehicle_id][c1_idx + 1 : c2_idx] = routes[vehicle_id][c1_idx + 1 : c2_idx][::-1]
-            pass
+            neighbor_routes = [route.copy() for route in self.routes]
+            neighbor_loads = self.vehicle_loads.copy()
+            vehicle_chosen = random.randint(0,self.num_vehicles-1)
+            while len(neighbor_routes[vehicle_chosen]) <= 4: #at least 5 cities including 2 depots
+                vehicle_chosen = random.randint(0,self.num_vehicles-1)
+            
+            c1_idx = random.randint(1, ( len(neighbor_routes[vehicle_chosen]) - 2 )//2)
+            c2_idx = random.randint(( len(neighbor_routes[vehicle_chosen]) - 2 )//2 + 1, len(neighbor_routes[vehicle_chosen]) - 2)
+            
+            neighbor_routes[vehicle_chosen][c1_idx + 1 : c2_idx] = neighbor_routes[vehicle_chosen][c1_idx + 1 : c2_idx][::-1]
+            
+            total_cost = sum(
+                sum(self.cost_matrix[neighbor_routes[i][j]][neighbor_routes[i][j+1]] 
+                    for j in range(len(neighbor_routes[i])-1))
+                for i in range(self.num_vehicles)
+            )
+            
+            return {'routes': neighbor_routes, 'total_cost': total_cost, 'vehicle_loads': neighbor_loads}
         elif option == "insert_sub_route_to_another_pos": #chon 1 hanh trinh con roi chen vao vi tri ngau nhien
             #chon hanh trinh con tu vehicle co nhieu customer nhat -> vehicle co it customer nhat
-            pass
+            neighbor_routes = [route.copy() for route in self.routes]
+            neighbor_loads = self.vehicle_loads.copy()
+            highest_customer_served_vehicle, lowest_customer_served_vehicle = None,None
+            min_cus,max_cus = float("inf"), - float("inf")
+            for idx,route in enumerate(neighbor_routes):
+                if len(route) > max_cus:
+                    max_cus = len(route)
+                    highest_customer_served_vehicle = idx
+                if len(route) < min_cus:
+                    min_cus = len(route)
+                    lowest_customer_served_vehicle = idx
+            
+            c1_idx = random.randint(1, ( len(neighbor_routes[highest_customer_served_vehicle]) - 2 )//2)
+            c2_idx = random.randint(c1_idx  + 1, len(neighbor_routes[highest_customer_served_vehicle]) - 2)
+            
+            sub_route = neighbor_routes[highest_customer_served_vehicle][c1_idx  : c2_idx + 1]
+            sub_route_demand = sum([self.demands[c] for c in sub_route])
+            if neighbor_loads[lowest_customer_served_vehicle] + sub_route_demand <= self.max_capacity: #neu co the insert sub-route nay vao vehicle moi
+                #remove the sub-route from its old vehicle
+                neighbor_routes[highest_customer_served_vehicle] = neighbor_routes[highest_customer_served_vehicle][:c1_idx] + neighbor_routes[highest_customer_served_vehicle][c2_idx + 1:]
+                neighbor_loads[highest_customer_served_vehicle] -= sub_route_demand
+                #insert the sub-route into the new vehicle
+                insert_pos = random.randint(1,len(neighbor_routes[lowest_customer_served_vehicle]) - 1)
+                neighbor_routes[lowest_customer_served_vehicle] = neighbor_routes[lowest_customer_served_vehicle][:insert_pos] + sub_route + neighbor_routes[lowest_customer_served_vehicle][insert_pos:]
+                neighbor_loads[lowest_customer_served_vehicle] += sub_route_demand
+            
+            total_cost = sum(
+                sum(self.cost_matrix[neighbor_routes[i][j]][neighbor_routes[i][j+1]] 
+                    for j in range(len(neighbor_routes[i])-1))
+                for i in range(self.num_vehicles)
+            )
+            
+            return {'routes': neighbor_routes, 'total_cost': total_cost, 'vehicle_loads': neighbor_loads}
         elif option == "insert_random_city_to_new_pos": #chon 1 thanh pho tu vehicle phuc vu nhieu khach -> vehicle phuc vu it khach
             neighbor_routes = [route.copy() for route in self.routes]
             neighbor_loads = self.vehicle_loads.copy()
@@ -166,7 +218,8 @@ class AdvancedCVRPSolver:
             #chose a city from highest customer served vehicle
             c_idx = random.randint(1, len(neighbor_routes[highest_customer_served_vehicle]) - 2)
             city = neighbor_routes[highest_customer_served_vehicle][c_idx]
-            if neighbor_loads[highest_customer_served_vehicle] >= self.demands[city] and neighbor_loads[lowest_customer_served_vehicle] + self.demands[city] <= self.max_capacity:
+
+            if len(neighbor_routes[highest_customer_served_vehicle]) > 3 and neighbor_loads[lowest_customer_served_vehicle] + self.demands[city] <= self.max_capacity:
                 new_neighbor_route = neighbor_routes[highest_customer_served_vehicle][:c_idx] + neighbor_routes[highest_customer_served_vehicle][c_idx + 1:] #remove the chosen city from highest 
                 neighbor_routes[highest_customer_served_vehicle] = new_neighbor_route
                 neighbor_loads[highest_customer_served_vehicle] -= self.demands[city] #update the loads of the highest city
@@ -198,37 +251,39 @@ class AdvancedCVRPSolver:
             self.logger.info("No customers left.")
         else:
             self.logger.info(f"Number of unserved customers: {unserved}.")
+            print(f'Problem code : n = {self.num_customers}, k = {self.num_vehicles}')
+def read_input(file_content):
+    lines = file_content.strip().split("\n")
+    capacity = 0
+    demands = []
+    nodes = []
+    name = ""
+    edge_weight_type = ""
+    parsing_nodes = False
+    parsing_demands = False
 
-def read_vrp_file(filepath):
-    
-    with open(filepath, 'r') as file:
-        file_content = file.read()
-        lines = file_content.strip().split("\n")
-        capacity = 0
-        demands = []
-        nodes = []
-        parsing_nodes = False
-        parsing_demands = False
+    for line in lines:
+        if line.startswith("NAME"):
+            name = line.split(":")[1].strip()
+        elif line.startswith("CAPACITY"):
+            capacity = int(line.split(":")[1].strip())
+        elif line.startswith("EDGE_WEIGHT_TYPE"):
+            edge_weight_type = line.split(":")[1].strip()
+        elif line.startswith("NODE_COORD_SECTION"):
+            parsing_nodes = True
+        elif line.startswith("DEMAND_SECTION"):
+            parsing_nodes = False
+            parsing_demands = True
+        elif line.startswith("DEPOT_SECTION"):
+            parsing_demands = False
+        elif parsing_nodes:
+            _, x, y = line.split()
+            nodes.append((float(x), float(y)))
+        elif parsing_demands:
+            _, demand = line.split()
+            demands.append(int(demand))
 
-        for line in lines:
-            if line.startswith("CAPACITY"):
-                capacity = int(line.split(":")[1].strip())
-            elif line.startswith("NODE_COORD_SECTION"):
-                parsing_nodes = True
-            elif line.startswith("DEMAND_SECTION"):
-                parsing_nodes = False
-                parsing_demands = True
-            elif line.startswith("DEPOT_SECTION"):
-                parsing_demands = False
-            elif parsing_nodes:
-                _, x, y = line.split()
-                nodes.append((float(x), float(y)))
-            elif parsing_demands:
-                _, demand = line.split()
-                demands.append(int(demand))
-        
-        return nodes, demands, capacity
-
+    return name, edge_weight_type, nodes, demands, capacity
 def compute_cost_matrix(nodes):
     n = len(nodes)
     cost_matrix = [[0] * n for _ in range(n)]
@@ -240,17 +295,39 @@ def compute_cost_matrix(nodes):
                 cost_matrix[i][j] = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
     return cost_matrix
 
+def create_solutions_file(input_dir, output_file):
+    with open(output_file, "w") as output:
+        for input_file in glob.glob(os.path.join(input_dir, "*.vrp")):
+            with open(input_file, "r") as file:
+                name, edge_weight_type, nodes, demands, capacity = read_input(file.read())
+
+                if edge_weight_type != "EUC_2D":
+                    print(f"Skipping {name}: Unsupported EDGE_WEIGHT_TYPE {edge_weight_type}")
+                    continue
+
+                num_customers = len(nodes)
+                num_vehicles = int(name.split("-k")[1])  
+                cost_matrix = compute_cost_matrix(nodes)
+
+                solver = AdvancedCVRPSolver(num_customers, num_vehicles, demands, cost_matrix, capacity)
+                start_time = time.time()
+                solutions = solver.simulated_annealing()
+                end_time = time.time()
+                routes,total_cost,total_capacities = solutions["routes"],solutions["total_cost"],solutions["vehicle_loads"]
+
+                output.write(f"{name}\n")
+                output.write("=" * 30 + "\n")
+                for i, route in enumerate(routes):
+                    output.write(f"Vehicle {i + 1}: {route}\n")
+                output.write(f"Total cost of the solution: {total_cost}\n")
+                output.write(f"Total capacities of the solution: {total_capacities}\n")
+                output.write(f"Time taken by the algorithm: {end_time - start_time:.10f} seconds\n")
+                output.write("\n")
 
 if __name__ == "__main__":
-    nodes, demands, capacity = read_vrp_file("test input\E\E-n101-k14.vrp")
-    cost_matrix = compute_cost_matrix(nodes)
-    solver = AdvancedCVRPSolver(num_customers=len(nodes), num_vehicles=14, demands=demands, cost_matrix=cost_matrix, capacity=capacity)
-    
-    start_time = time.time()
-    annealing_solution = solver.simulated_annealing()
-    end_time = time.time()
-    for i,route in enumerate(annealing_solution['routes']):
-        print(f"Vehicles {i+1}: {route}")
-    print(f"Total cost : {annealing_solution['total_cost']}")
-    print(f"Capacites of vehicles : {annealing_solution['vehicle_loads']}")
-    print(f"Simulated Annealing solution found in {end_time - start_time} seconds")
+    input_dir = r"C:\Users\dmin\HUST\20241\Project1\test input\E"
+    output_file = r"C:\Users\dmin\HUST\20241\Project1\simulated_annealing_result_set_E.txt"
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    create_solutions_file(input_dir, output_file)
+
+
